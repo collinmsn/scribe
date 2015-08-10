@@ -27,12 +27,15 @@
 #ifndef SCRIBE_STORE_H
 #define SCRIBE_STORE_H
 
+#include <boost/asio.hpp>
+#include <boost/shared_ptr.hpp>
 #include "common.h" // includes std libs, thrift, and stl typedefs
 #include "conf.h"
 #include "file.h"
 #include "conn_pool.h"
 #include "store_queue.h"
 #include "network_dynamic_config.h"
+#include "libkafka_asio/libkafka_asio.h"
 
 class StoreQueue;
 
@@ -625,5 +628,27 @@ class ThriftMultiFileStore : public CategoryStore {
   ThriftMultiFileStore();
   ThriftMultiFileStore(Store& rhs);
   ThriftMultiFileStore& operator=(Store& rhs);
+};
+
+/**
+*/
+class KafkaStore: public Store {
+public:
+static const int DEFAULT_SOCKET_TIMEOUT_MS = 100;
+public:
+  KafkaStore(StoreQueue* storeq, const std::string& category, bool multi_category);
+  virtual ~KafkaStore();
+
+  virtual void configure(pStoreConf configuration, pStoreConf parent);
+  // Attempts to store messages and returns true if successful.
+  // On failure, returns false and messages contains any un-processed messages
+  virtual bool handleMessages(boost::shared_ptr<logentry_vector_t> messages) = 0;
+ protected:
+  static void AsyncRequestCB(const libkafka_asio::Connection::ErrorCodeType& err,
+                              const libkafka_asio::ProduceResponse::OptionalType& response, bool *ok);
+  // configuration
+  long int timeout;
+  std::vector<std::string> brokers;
+  std::string topic;
 };
 #endif // SCRIBE_STORE_H
