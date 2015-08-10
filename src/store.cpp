@@ -2996,6 +2996,9 @@ KafkaStore::KafkaStore(StoreQueue* storeq, const std::string& category, bool mul
 Store(storeq, category, "KafkaStore", multi_category) {
 }
 
+KafkaStore::~KafkaStore() {
+}
+
 void KafkaStore::configure(pStoreConf configuration, pStoreConf parent) {
   Store::configure(configuration, parent);
   // Error checking is done on open()
@@ -3004,42 +3007,44 @@ void KafkaStore::configure(pStoreConf configuration, pStoreConf parent) {
     timeout = DEFAULT_SOCKET_TIMEOUT_MS;
   }
 
-  std::string brockers_str;
+  std::string brokers_str;
   if (!configuration->getString("brokers", brokers_str)) {
     LOG_OPER("[kafka] [%s] ERROR: config get brokers failed", categoryHandled.c_str());
   } else {
-    boost::split(&brokers, brokers_str, is_any_of(","), boost::token_compress_on);
+    boost::split(brokers, brokers_str, boost::is_any_of(","), boost::token_compress_on);
     if (brokers.empty()) {
         LOG_OPER("[kafka] [%s] ERROR: config get zero brokers", categoryHandled.c_str());
     }
   }
 
   if (configuration->getString("topic", topic)) {
-    LOG_OPER("[kafka] [%s] INFO: get topic %s", categoryHandled.c_str(), topic);
+    LOG_OPER("[kafka] [%s] INFO: get topic %s", categoryHandled.c_str(), topic.c_str());
   }
 }
 
 void KafkaStore::AsyncRequestCB(const libkafka_asio::Connection::ErrorCodeType& err,
-                            const libkafka_asio::ProduceResponse::OptionalType& response, bool *ok) {
-    LOG_OPER("[kafka] [%s] DEBUG: AsyncRequestCB err=%s", categoryHandled.c_str(), err.message());
+                                const libkafka_asio::ProduceResponse::OptionalType& response, const std::string& categoryHandled, bool *ok) {
+    LOG_OPER("[kafka] [%s] DEBUG: AsyncRequestCB err=%s", categoryHandled.c_str(), err.message().c_str());
 }
 bool KafkaStore::handleMessages(boost::shared_ptr<logentry_vector_t> messages) {
     libkafka_asio::ProduceRequest request;
-    for (logentry_vector_t::const_iterator it = (*messages)::const_begin(); it != (*messages)::const_end(); ++it) {
-        request.AddValue(it->message(), topic, 0);
+    for (logentry_vector_t::iterator iter = messages->begin(); 
+            iter != messages->end(); 
+            ++iter) {
+      request.AddValue((*iter)->message, topic);
     }
 
-    libkafka_asio::Connection::Configuration config();
+    libkafka_asio::Connection::Configuration config;
     config.auto_connect = true;
     config.client_id = "scribe_kafka";
     config.socket_timeout = timeout;
     for (size_t i = 0; i < brokers.size(); ++i) {
-        config.AddBrokerFromString(brockers[i])
+      config.AddBrokerFromString(brokers[i]);
     }
     boost::asio::io_service ios;
     libkafka_asio::Connection connection(ios, config);
     bool ok = false;
-    connection.AsyncRequest(request, boost::bind(KafkaStore::AsyncRequestCB, _1, _2, &ok));
+    connection.AsyncRequest(request, boost::bind(KafkaStore::AsyncRequestCB, _1, _2, categoryHandled, &ok));
     ios.run();
     return ok;
 }

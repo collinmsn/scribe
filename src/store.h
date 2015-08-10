@@ -645,7 +645,7 @@ public:
   virtual bool handleMessages(boost::shared_ptr<logentry_vector_t> messages) = 0;
  protected:
   static void AsyncRequestCB(const libkafka_asio::Connection::ErrorCodeType& err,
-                              const libkafka_asio::ProduceResponse::OptionalType& response, bool *ok);
+                             const libkafka_asio::ProduceResponse::OptionalType& response, const std::string& categoryHandled, bool *ok);
   // configuration
   long int timeout;
   std::vector<std::string> brokers;
