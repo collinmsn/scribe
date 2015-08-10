@@ -2993,7 +2993,7 @@ void ThriftMultiFileStore::configure(pStoreConf configuration, pStoreConf parent
 
 
 KafkaStore::KafkaStore(StoreQueue* storeq, const std::string& category, bool multi_category):
-Store(storeq, category, "KafkaStore", multi_category) {
+Store(storeq, category, "kafka", multi_category) {
 }
 
 KafkaStore::~KafkaStore() {
