@@ -2992,6 +2992,7 @@ void ThriftMultiFileStore::configure(pStoreConf configuration, pStoreConf parent
 }
 
 
+const std::string KafkaStore::CATEGORY_PREFIX = "kafka_";
 KafkaStore::KafkaStore(StoreQueue* storeq, const std::string& category, bool multi_category):
 Store(storeq, category, "kafka", multi_category) {
 }
@@ -2999,13 +3000,38 @@ Store(storeq, category, "kafka", multi_category) {
 KafkaStore::~KafkaStore() {
 }
 
+bool KafkaStore::open() {
+    if (boost::starts_with(categoryHandled, CATEGORY_PREFIX)) {
+        topic = categoryHandled.substr(CATEGORY_PREFIX.size());
+    } else {
+        topic = categoryHandled;
+    }
+    config = libkafka_asio::Connection::Configuration();
+    config.auto_connect = true;
+    config.client_id = "scribe_kafka";
+    config.socket_timeout = timeout;
+    for (size_t i = 0; i < brokers.size(); ++i) {
+        config.AddBrokerFromString(brokers[i]);
+    }
+    LOG_OPER("[kafka] [%s] INFO: open topic=%s", categoryHandled.c_str(), topic.c_str());
+    return true;
+}
+
+bool KafkaStore::isOpen() {
+    return !topic.empty();
+}
+void KafkaStore::close() {
+}
+void KafkaStore::flush() {
+}
+
 void KafkaStore::configure(pStoreConf configuration, pStoreConf parent) {
   Store::configure(configuration, parent);
   // Error checking is done on open()
   if (!configuration->getInt("timeout", timeout)) {
-    LOG_OPER("[kafka] [%s] INFO: use default timeout %d ms", categoryHandled.c_str(), DEFAULT_SOCKET_TIMEOUT_MS);
     timeout = DEFAULT_SOCKET_TIMEOUT_MS;
   }
+  LOG_OPER("[kafka] [%s] INFO: timeout %ld ms", categoryHandled.c_str(), timeout);
 
   std::string brokers_str;
   if (!configuration->getString("brokers", brokers_str)) {
@@ -3016,31 +3042,37 @@ void KafkaStore::configure(pStoreConf configuration, pStoreConf parent) {
         LOG_OPER("[kafka] [%s] ERROR: config get zero brokers", categoryHandled.c_str());
     }
   }
+}
 
-  if (configuration->getString("topic", topic)) {
-    LOG_OPER("[kafka] [%s] INFO: get topic %s", categoryHandled.c_str(), topic.c_str());
-  }
+boost::shared_ptr<Store> KafkaStore::copy(const std::string &category) {
+  KafkaStore *store = new KafkaStore(storeQueue, category, multiCategory);
+  boost::shared_ptr<Store> copied = boost::shared_ptr<Store>(store);
+
+  store->timeout = timeout;
+  store->brokers = brokers;
+  store->topic = topic;
+  store->config = config;
+
+  return copied;
 }
 
 void KafkaStore::AsyncRequestCB(const libkafka_asio::Connection::ErrorCodeType& err,
                                 const libkafka_asio::ProduceResponse::OptionalType& response, const std::string& categoryHandled, bool *ok) {
-    LOG_OPER("[kafka] [%s] DEBUG: AsyncRequestCB err=%s", categoryHandled.c_str(), err.message().c_str());
+    if (err) {
+        *ok = false;
+        LOG_OPER("[kafka] [%s] ERROR: AsyncRequestCB err=%s", categoryHandled.c_str(), err.message().c_str());
+    } else {
+        *ok = true;
+    }
 }
 bool KafkaStore::handleMessages(boost::shared_ptr<logentry_vector_t> messages) {
     libkafka_asio::ProduceRequest request;
-    for (logentry_vector_t::iterator iter = messages->begin(); 
-            iter != messages->end(); 
+    for (logentry_vector_t::iterator iter = messages->begin();
+            iter != messages->end();
             ++iter) {
-      request.AddValue((*iter)->message, topic);
+        request.AddValue((*iter)->message, topic);
     }
 
-    libkafka_asio::Connection::Configuration config;
-    config.auto_connect = true;
-    config.client_id = "scribe_kafka";
-    config.socket_timeout = timeout;
-    for (size_t i = 0; i < brokers.size(); ++i) {
-      config.AddBrokerFromString(brokers[i]);
-    }
     boost::asio::io_service ios;
     libkafka_asio::Connection connection(ios, config);
     bool ok = false;

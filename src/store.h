@@ -634,15 +634,24 @@ class ThriftMultiFileStore : public CategoryStore {
 */
 class KafkaStore: public Store {
 public:
-static const int DEFAULT_SOCKET_TIMEOUT_MS = 100;
+static const int DEFAULT_SOCKET_TIMEOUT_MS = 1000;
+static const std::string CATEGORY_PREFIX;
 public:
   KafkaStore(StoreQueue* storeq, const std::string& category, bool multi_category);
   virtual ~KafkaStore();
 
-  virtual void configure(pStoreConf configuration, pStoreConf parent);
+  virtual bool open();
+  virtual bool isOpen();
+  virtual void flush();
+  virtual void close();
+
+  virtual boost::shared_ptr<Store> copy(const std::string &category);
+
   // Attempts to store messages and returns true if successful.
   // On failure, returns false and messages contains any un-processed messages
-  virtual bool handleMessages(boost::shared_ptr<logentry_vector_t> messages) = 0;
+  virtual bool handleMessages(boost::shared_ptr<logentry_vector_t> messages);
+
+  virtual void configure(pStoreConf configuration, pStoreConf parent);
  protected:
   static void AsyncRequestCB(const libkafka_asio::Connection::ErrorCodeType& err,
                              const libkafka_asio::ProduceResponse::OptionalType& response, const std::string& categoryHandled, bool *ok);
@@ -650,5 +659,11 @@ public:
   long int timeout;
   std::vector<std::string> brokers;
   std::string topic;
+
+  libkafka_asio::Connection::Configuration config;
+private:
+  KafkaStore();
+  KafkaStore(KafkaStore& rhs);
+  KafkaStore& operator=(KafkaStore& rhs);
 };
 #endif // SCRIBE_STORE_H
